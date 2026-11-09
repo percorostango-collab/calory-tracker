@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { Search, Plus, X, Utensils, Flame, Droplet, Wheat, Sparkles, Camera, Loader2, Check, AlertCircle, Target, Trash2 } from "lucide-react";
-import { Food, DailyLogData, NewFood } from "@/lib/types";
+import { Food, DailyLogData, NewFood, LogEntry } from "@/lib/types";
 
 interface CalorieTrackerProps {
   initialData: DailyLogData;
@@ -171,7 +171,7 @@ export default function CalorieTracker({ initialData, today, formattedDate }: Ca
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-4 text-slate.900">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-4 text-slate-900">
       <div className="w-full max-w-2xl space-y-6">
 
         {/* Header */}
@@ -376,7 +376,7 @@ export default function CalorieTracker({ initialData, today, formattedDate }: Ca
               <div className="p-16 text-center space-y-4">
                 <div className="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto">
                   <Utensils className="w-10 h-10 text-slate-200" />
-                </div>
+                </div >
                 <p className="text-slate-400 font-medium">Il tuo diario è vuoto. Inizia una ricerca!</p>
               </div>
             ) : (
@@ -399,12 +399,12 @@ function SummaryCard({ label, value, icon, unit }: { label: string; value: strin
     <div className="p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col items-center text-center space-y-1">
       <div className="p-2 bg-slate-50 rounded-xl mb-1">
         {icon}
-      </div>
+      </div >
       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
       <div className="text-lg font-black text-slate-900">
-        {value} <span className="text-xs font-medium text-slate-400">{unit}</span>
-      </div>
-    </div>
+        {value} <span className="text-xs font-medium text-slate-400">{unit}</span >
+      </div >
+    </div >
   );
 }
 
@@ -418,8 +418,8 @@ function FoodSearchItem({ food, onAdd }: { food: Food; onAdd: (f: Food) => void 
         <span className="font-bold text-slate-900">{food.name}</span>
         <span className="text-xs text-slate-500">
           {food.calories} kcal • {food.protein}g P • {food.servingSize}
-        </span>
-      </div>
+        </span >
+      </div >
       <button
         className="p-2 rounded-full bg-blue-600 text-white opacity-0 group-hover:opacity-100 transition-all transform group-hover:scale-110 shadow-lg shadow-blue-200"
         onClick={(e) => {
@@ -429,25 +429,25 @@ function FoodSearchItem({ food, onAdd }: { food: Food; onAdd: (f: Food) => void 
       >
         <Plus className="w-5 h-5" />
       </button>
-    </div>
+    </div >
   );
 }
 
-function FoodLogEntryRow({ entry, onDelete }: { entry: any; onDelete: (id: number) => void }) {
+function FoodLogEntryRow({ entry, onDelete }: { entry: LogEntry; onDelete: (id: number) => void }) {
   return (
     <div className="flex items-center justify-between p-5 hover:bg-slate-50 transition-colors">
       <div className="flex flex-col">
         <span className="font-bold text-slate-900 text-base">{entry.food.name}</span>
         <span className="text-sm text-slate-500 font-medium">
           {entry.servings}x {entry.food.servingSize} • {Math.round(entry.food.calories * entry.servings)} kcal
-        </span>
-      </div>
+        </span >
+      </div >
       <button
         onClick={() => onDelete(entry.id)}
         className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
       >
         <X className="w-5 h-5" />
       </button>
-    </div>
+    </div >
   );
 }

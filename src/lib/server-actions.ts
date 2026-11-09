@@ -1,7 +1,7 @@
-import { foods, foodLog } from "@/db/schema";
+import { foods, foodLog } from "../db/schema";
 import { and, eq, like } from "drizzle-orm";
-import { db } from "@/db";
-import type { Food, NewFood } from "@/lib/types";
+import { db } from "../db";
+import type { Food, NewFood } from "../lib/types";
 
 export async function getFoods(query: string): Promise<Food[]> {
   if (!query) return [];

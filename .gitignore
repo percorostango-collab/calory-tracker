@@ -3,9 +3,17 @@
 
 # Dependencies
 node_modules/
-__pycache__/
-*.py[cod]
-*$py.class
+
+# Next.js build output
+.next/
+out/
+
+# Database
+*.db
+*.sqlite
+
+# TypeScript
+*.tsbuildinfo
 
 # OS files
 .DS_Store
@@ -18,16 +26,9 @@ Thumbs.db
 # Logs
 *.log
 
-# Build outputs
-dist/
-build/
-
-# Python environments
-venv/
-.venv/
-env/
-
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
+# Misc
+review_package/
+review_package.zip
+scripts/
+AAA
+]

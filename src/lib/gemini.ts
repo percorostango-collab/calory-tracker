@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import type { NewFood } from "@/lib/types";
+import type { NewFood } from "../lib/types";
 
 const MODEL_NAME = "gemini-3.5-flash-lite";
 
