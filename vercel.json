@@ -4,14 +4,6 @@
     "app": {
       "root": ".",
       "framework": "nextjs"
-    },
-    "review_package": {
-      "root": "review_package",
-      "framework": "nextjs"
-    },
-    "tracker_mobile": {
-      "root": "tracker_mobile",
-      "framework": "nextjs"
     }
   },
   "rewrites": [
