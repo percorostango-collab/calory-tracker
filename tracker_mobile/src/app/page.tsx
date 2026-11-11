@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import MobileTracker from "@/components/MobileTracker";
 import { getDailyLog, getFoods } from "@/lib/server-actions";
-import { ensureSchema } from "@/db";
 
 // La pagina dipende dalla sessione Clerk (dati per-utente): non puo' essere prerenderizzata.
 export const instant = false;
@@ -28,7 +27,6 @@ export default async function Home() {
   const { userId } = await auth();
   if (!userId) redirect("/sign-in");
 
-  await ensureSchema(); // migrazione idempotente (colonna userId su food_log)
   const { data, foods, today, formattedDate } = await getInitialData(userId);
 
   return (

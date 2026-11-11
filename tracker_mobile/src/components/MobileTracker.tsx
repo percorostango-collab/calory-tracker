@@ -18,6 +18,7 @@ import {
   CameraIcon
 } from "lucide-react";
 import { Food, DailyLogData, NewFood, LogEntry } from "@/lib/types";
+import { compressImage } from "@/lib/client-utils";
 
 interface MobileTrackerProps {
   initialData: DailyLogData;
@@ -159,10 +160,16 @@ export default function MobileTracker({ initialData, today, formattedDate }: Mob
     setAiError(null);
     setAiPreviewItems(null);
 
-    const formData = new FormData();
-    formData.append("image", file);
-
     try {
+      // Compress the image locally before uploading
+      const compressedBlob = await compressImage(file, 1280, 0.7);
+      const compressedFile = new File([compressedBlob], file.name, {
+        type: "image/jpeg",
+      });
+
+      const formData = new FormData();
+      formData.append("image", compressedFile);
+
       const res = await fetch("/api/nutrition/image", {
         method: "POST",
         body: formData,
@@ -187,10 +194,17 @@ export default function MobileTracker({ initialData, today, formattedDate }: Mob
     setAiError(null);
     setAiPreviewItems(null);
 
-    const formData = new FormData();
-    formData.append("image", file);
-
     try {
+      // Compress the image locally before uploading (camera photos are
+      // usually 5-15 MB; Gemini doesn't need that resolution).
+      const compressedBlob = await compressImage(file, 1280, 0.7);
+      const compressedFile = new File([compressedBlob], "foto-alimento.jpg", {
+        type: "image/jpeg",
+      });
+
+      const formData = new FormData();
+      formData.append("image", compressedFile);
+
       const res = await fetch("/api/nutrition/image", {
         method: "POST",
         body: formData,
