@@ -41,6 +41,7 @@ export async function initDb() {
   await c.execute(`
     CREATE TABLE IF NOT EXISTS food_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      userId TEXT NOT NULL,
       foodId INTEGER NOT NULL,
       servings REAL NOT NULL DEFAULT 1,
       loggedAt TEXT NOT NULL,
@@ -55,5 +56,32 @@ export async function initDb() {
   if (count === 0) {
     console.log("Seeding initial foods...");
     await seedFoods(db);
+  }
+}
+
+// Migrazione self-healing: i database creati prima dell'introduzione di Clerk
+// hanno food_log SENZA la colonna userId. La aggiungo se manca (idempotente,
+// non modifica i dati esistenti: le righe vecchie ricevono userId = '').
+export async function ensureSchema() {
+  await initDb();
+  const c = getClient();
+  const info = await c.execute("PRAGMA table_info(food_log)");
+  const nameIdx = info.columns.indexOf("name");
+  const hasUserId = info.rows.some(
+    (row) => String(row[nameIdx]) === "userId"
+  );
+  if (!hasUserId) {
+    try {
+      await c.execute(
+        "ALTER TABLE food_log ADD COLUMN userId TEXT NOT NULL DEFAULT ''"
+      );
+      console.log("Migrated food_log: added userId column");
+    } catch (error) {
+      // "duplicate column name": un'istanza concorrente ha migrato prima di noi.
+      console.warn(
+        "food_log migration skipped:",
+        error instanceof Error ? error.message : String(error)
+      );
+    }
   }
 }
