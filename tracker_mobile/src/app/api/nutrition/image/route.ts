@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { lookupNutritionFromImage, GeminiError } from "@shared/lib/gemini";
+import { lookupNutritionFromImage, GeminiError } from "@/lib/gemini";
 
 const ALLOWED_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB

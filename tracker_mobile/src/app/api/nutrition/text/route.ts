@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { lookupNutritionFromText, GeminiError } from "@shared/lib/gemini";
+import { lookupNutritionFromText, GeminiError } from "@/lib/gemini";
 
 export async function POST(req: Request) {
   try {

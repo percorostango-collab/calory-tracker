@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuth } from "@clerk/nextjs/server";
-import { upsertFood } from "@shared/lib/server-actions";
-import type { NewFood } from "@shared/lib/types";
+import { upsertFood } from "@/lib/server-actions";
+import type { NewFood } from "@/lib/types";
 
 export async function POST(req: NextRequest) {
   const { userId } = await getAuth(req);
