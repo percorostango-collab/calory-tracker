@@ -13,7 +13,7 @@ export async function compressImage(
 ): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.readAsDataAsURL(file);
+    reader.readAsDataURL(file);
     reader.onload = (event) => {
       const img = new Image();
       img.src = event.target?.result as string;
