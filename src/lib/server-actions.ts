@@ -1,7 +1,7 @@
 import { foods, foodLog } from "../db/schema";
-import { and, eq, like } from "drizzle-orm";
+import { eq, like } from "drizzle-orm";
 import { db } from "../db";
-import type { Food, NewFood } from "../lib/types";
+import type { Food, NewFood } from "./types";
 
 export async function getFoods(query: string): Promise<Food[]> {
   if (!query) return [];
@@ -38,11 +38,12 @@ export async function getDailyLog(date: string) {
   return { entries, totals };
 }
 
-export async function addLogEntry(foodId: number, servings: number, date: string) {
+export async function addLogEntry(foodId: number, servings: number, date: string, cookingMethod?: string | null) {
   await db.insert(foodLog).values({
     foodId,
     servings,
     loggedAt: date,
+    cooking_method: cookingMethod,
   });
 }
 
@@ -56,6 +57,7 @@ export async function clearDailyLog(date: string) {
 
 /**
  * Upserts a food item by name and returns its ID.
+ * Now includes new health-related fields.
  */
 export async function upsertFood(food: NewFood): Promise<number> {
   const existing = await db
@@ -69,9 +71,26 @@ export async function upsertFood(food: NewFood): Promise<number> {
     return existing.id;
   }
 
+  // Health flag derived from NOVA at insert time: 1-2 -> 1, 3-4 -> 0, unknown -> null.
+  // cooking_method is intentionally NOT written to foods (it belongs to food_log).
+  const is_healthy_flag = food.nova_group == null ? null : food.nova_group <= 2 ? 1 : 0;
+
   const [newFood] = await db
     .insert(foods)
-    .values(food)
+    .values({
+      name: food.name,
+      calories: food.calories,
+      protein: food.protein,
+      carbs: food.carbs,
+      fat: food.fat,
+      servingSize: food.servingSize,
+      sugar: food.sugar,
+      fiber: food.fiber,
+      category: food.category,
+      nova_group: food.nova_group,
+      is_healthy_flag,
+      source: "ai",
+    })
     .returning({ id: foods.id });
 
   return newFood.id;

@@ -1,5 +1,6 @@
-import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
-import type { NewFood } from "../lib/types";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import type { NewFood } from "./types";
+import { nutritionSchema, NUTRITIONIST_PREAMBLE } from "./health/nutrition-schema";
 
 const MODEL_NAME = "gemini-3.5-flash-lite";
 
@@ -13,50 +14,7 @@ export class GeminiError extends Error {
   }
 }
 
-import type { GenerativeModel, ObjectSchema, ArraySchema } from "@google/generative-ai";
-
-/**
- * JSON schema enforcing the exact shape we expect from the model.
- */
-const foodItemSchema: ObjectSchema = {
-  description: "A single nutrition entry for a food item.",
-  type: SchemaType.OBJECT,
-  properties: {
-    name: {
-      type: SchemaType.STRING,
-      description: "Name of the food in Italian (e.g., 'Pollo alla griglia').",
-    },
-    calories: {
-      type: SchemaType.NUMBER,
-      description: "Total calories in the serving.",
-    },
-    protein: {
-      type: SchemaType.NUMBER,
-      description: "Total protein in grams.",
-    },
-    carbs: {
-      type: SchemaType.NUMBER,
-      description: "Total carbohydrates in grams.",
-    },
-    fat: {
-      type: SchemaType.NUMBER,
-      description: "Total fat in grams.",
-    },
-    servingSize: {
-      type: SchemaType.STRING,
-      description:
-        "Human-readable serving size in Italian (e.g., '1 piatto', '200g').",
-    },
-  },
-  required: ["name", "calories", "protein", "carbs", "fat", "servingSize"],
-};
-
-const nutritionSchema: ArraySchema = {
-  description:
-    "A list of individual food items or ingredients found in the described meal or photo.",
-  type: SchemaType.ARRAY,
-  items: foodItemSchema,
-};
+import type { GenerativeModel } from "@google/generative-ai";
 
 let modelInstance: GenerativeModel | undefined;
 
@@ -84,7 +42,7 @@ function getModel() {
 /**
  * Validates the raw model output and normalizes it into NewFood[].
  */
-function parseFoodResponse(raw: unknown): NewFood[] {
+export function parseFoodResponse(raw: unknown): NewFood[] {
   if (!Array.isArray(raw)) {
     throw new GeminiError("AI returned an invalid response format. Expected an array.", 502);
   }
@@ -115,6 +73,18 @@ function parseFoodResponse(raw: unknown): NewFood[] {
       carbs: parseFloat((carbs as number).toFixed(1)),
       fat: parseFloat((fat as number).toFixed(1)),
       servingSize: servingSize.trim(),
+      // New health fields: nullable, never invented (missing/invalid -> null, no 502)
+      sugar: isFiniteNumber(item.sugar) ? parseFloat((item.sugar as number).toFixed(1)) : null,
+      fiber: isFiniteNumber(item.fiber) ? parseFloat((item.fiber as number).toFixed(1)) : null,
+      category: typeof item.category === "string" && item.category.trim() ? item.category : null,
+      nova_group:
+        typeof item.nova_group === "number" && item.nova_group >= 1 && item.nova_group <= 4
+          ? item.nova_group
+          : null,
+      cooking_method:
+        typeof item.cooking_method === "string" && item.cooking_method.trim()
+          ? item.cooking_method.trim().toLowerCase()
+          : null,
     };
   });
 }
@@ -136,13 +106,6 @@ function toGeminiError(error: unknown): GeminiError {
   }
   return new GeminiError("Failed to reach Gemini. Please try again.", 502);
 }
-
-const NUTRITIONIST_PREAMBLE =
-  "You are a professional nutritionist. Your task is to analyze food descriptions or images. " +
-  "IMPORTANT: Always respond in ITALIAN. " +
-  "If the input is a complex meal (e.g., 'steak with salad and potatoes'), break it down into its individual components (e.g., 'Bistecca', 'Insalata', 'Patate') and return them as separate items in the list. " +
-  "Each item must have its own nutritional estimation. " +
-  "Return ONLY a JSON array of objects.";
 
 /**
  * Estimates nutrition from a text description.
