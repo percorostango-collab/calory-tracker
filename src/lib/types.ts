@@ -12,6 +12,17 @@ export interface Food {
   nova_group?: number | null;
   is_healthy_flag?: number | null;
   source?: string | null;
+  saturated_fat?: number | null;
+  monounsaturated_fat?: number | null;
+  polyunsaturated_fat?: number | null;
+  omega_3?: number | null;
+  omega_6?: number | null;
+  trans_fat?: number | null;
+  cholesterol?: number | null;
+  sodium?: number | null;
+  animal_protein?: number | null;
+  vegetal_protein?: number | null;
+  alcohol?: number | null;
 }
 
 export type NewFood = Omit<Food, "id"> & {
