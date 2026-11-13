@@ -27,7 +27,13 @@ export async function POST(req: Request) {
   } catch (error: any) {
     if (error instanceof GeminiError) {
       return NextResponse.json(
-        { error: error.message },
+        {
+          error: error.message,
+          // Raw message only for local/dev debugging; never exposed in production.
+          ...(process.env.NODE_ENV !== "production" && error.rawMessage
+            ? { rawMessage: error.rawMessage }
+            : {}),
+        },
         { status: error.statusCode }
       );
     }

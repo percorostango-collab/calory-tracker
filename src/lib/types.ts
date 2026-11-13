@@ -23,6 +23,11 @@ export interface Food {
   animal_protein?: number | null;
   vegetal_protein?: number | null;
   alcohol?: number | null;
+  carne_lavorata?: boolean | null;
+  carne_rossa?: boolean | null;
+  alcol?: boolean | null;
+  pesce_alto_mercurio?: boolean | null;
+  additivi?: boolean | null;
 }
 
 export type NewFood = Omit<Food, "id"> & {

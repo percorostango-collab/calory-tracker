@@ -2,6 +2,7 @@ import { createClient, Client } from "@libsql/client";
 import { drizzle } from "drizzle-orm/libsql";
 import * as schema from "./schema";
 import { seedFoods } from "./seed";
+import { runMigrations } from "./migrate";
 
 let client: Client | undefined;
 
@@ -39,14 +40,16 @@ export async function initDb() {
   `);
 
   await c.execute(`
-    CREATE TABLE IF NOT EXISTS food_log (
+    CREATE TABLE IF NOT EXISTS user_settings (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      foodId INTEGER NOT NULL,
-      servings REAL NOT NULL DEFAULT 1,
-      loggedAt TEXT NOT NULL,
-      FOREIGN KEY (foodId) REFERENCES foods(id)
-    );
+      weight REAL,
+      gender TEXT,
+      age INTEGER
+    )
   `);
+
+  // Run migrations to add new columns
+  await runMigrations(c);
 
   // Seed only if no foods exist, to avoid duplicate errors on every init
   const existing = await c.execute("SELECT count(*) as count FROM foods");

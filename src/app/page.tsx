@@ -8,7 +8,7 @@ export default async function Page() {
   // Auto-init: create tables and seed foods on first run (idempotent)
   await initDb();
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Intl.DateTimeFormat("en-CA").format(new Date());
   const formattedDate = new Date().toLocaleDateString("it-IT", {
     weekday: "long",
     year: "numeric",

@@ -1,7 +1,8 @@
-import { foods, foodLog } from "../db/schema";
+import { foods, foodLog, userSettings } from "../db/schema";
 import { eq, like } from "drizzle-orm";
 import { db } from "../db";
 import type { Food, NewFood } from "./types";
+import type { HealthEntry } from "./health/types";
 
 export async function getFoods(query: string): Promise<Food[]> {
   if (!query) return [];
@@ -94,4 +95,31 @@ export async function upsertFood(food: NewFood): Promise<number> {
     .returning({ id: foods.id });
 
   return newFood.id;
+}
+
+/**
+ * Bridge between the SQLite DB and the pure health engine.
+ * The health engine itself stays framework-free in src/lib/health/.
+ */
+export async function getHealthEntries(date: string): Promise<HealthEntry[]> {
+  const rows = await db
+    .select({
+      id: foodLog.id,
+      servings: foodLog.servings,
+      loggedAt: foodLog.loggedAt,
+      cooking_method: foodLog.cooking_method,
+      food: foods,
+    })
+    .from(foodLog)
+    .innerJoin(foods, eq(foodLog.foodId, foods.id))
+    .where(eq(foodLog.loggedAt, date));
+
+  return rows.map((row) => ({
+    id: row.id,
+    servings: row.servings,
+    loggedAt: row.loggedAt,
+    cooking_method: row.cooking_method,
+    // Drizzle result rows match the Food interface structurally.
+    food: row.food as unknown as Food,
+  }));
 }

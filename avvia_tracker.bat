@@ -1,34 +1,46 @@
 @echo off
-SETLOCAL EnableDelayedExpansion
-
+cd /d "%~dp0"
 echo ==========================================
 echo    AVVIO CALORY TRACKER
 echo ==========================================
-
-:: 1. Verifica presenza node_modules
-if not exist "node_modules\" (
-    echo [!] node_modules non trovato. Installazione dipendenze in corso...
-    call npm install
-    if !ERRORLEVEL! neq 0 (
-        echo [X] Errore durante npm install. Verifica la connessione o la presenza di Node.js.
-        pause
-        exit /b !ERRORLEVEL!
-    )
-    echo [OK] Installazione completata.
-) else (
-    echo [OK] Dipendenze gia installate.
-)
-
-:: 2. Avvio server di sviluppo
-echo [>] Avvio server di sviluppo (http://localhost:3000)...
-echo [!] Premi CTRL+C per fermare il server.
+echo Cartella: %CD%
 echo.
 
-call npm run dev
+if not exist package.json goto nopkg
+node -e "process.exit(require('./package.json').scripts.dev?0:1)" 2>nul
+if errorlevel 1 goto nodev
 
-if !ERRORLEVEL! neq 0 (
-    echo.
-    echo [X] Errore durante l'avvio del server.
-    pause
-    exit /b !ERRORLEVEL!
-)
+if exist node_modules goto deps_ok
+echo Installo le dipendenze, attendi...
+call npm install
+if errorlevel 1 goto fail
+goto start
+
+:deps_ok
+echo [OK] Dipendenze gia installate.
+
+:start
+echo [i] Premi CTRL+C per fermare il server.
+echo.
+call npm run dev
+if errorlevel 1 goto fail
+goto end
+
+:nopkg
+echo [X] In questa cartella non c'e package.json.
+echo     Questo file deve stare nella cartella principale del progetto PC.
+goto end
+
+:nodev
+echo [X] Il package.json di questa cartella non ha lo script "dev".
+echo     Cartella: %CD%
+echo     Script disponibili:
+call npm run
+goto end
+
+:fail
+echo [X] Errore durante l'avvio del server.
+
+:end
+echo.
+pause

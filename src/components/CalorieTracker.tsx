@@ -1,8 +1,14 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Search, Plus, X, Utensils, Flame, Droplet, Wheat, Sparkles, Camera, Loader2, Check, AlertCircle, Target, Trash2 } from "lucide-react";
+import { Search, Plus, X, Utensils, Flame, Droplet, Wheat, Sparkles, Camera, Loader2, Check, AlertCircle, Target, Trash2, ChevronLeft, ChevronRight, Scale, Info, TrendingUp, AlertTriangle, Award } from "lucide-react";
 import { Food, DailyLogData, NewFood, LogEntry } from "@/lib/types";
+import { format, addDays, subDays, parseISO, isSameDay } from "date-fns";
+import { it } from "date-fns/locale";
+import DailyReport from "./health/DailyReport";
+import { getUserWeight, saveWeight } from "@/lib/settings-actions";
+import type { DailyHealthMetrics } from "@/lib/health/types";
+import type { Recommendation } from "@/lib/health/recommendations";
 
 interface CalorieTrackerProps {
   initialData: DailyLogData;
@@ -13,11 +19,19 @@ interface CalorieTrackerProps {
 
 const CALORIE_GOAL = 2500;
 
-export default function CalorieTracker({ initialData, today, formattedDate }: CalorieTrackerProps) {
+export default function CalorieTracker({ initialData, today: initialToday, formattedDate: initialFormattedDate }: CalorieTrackerProps) {
+  const [selectedDate, setSelectedDate] = useState(initialToday);
   const [entries, setEntries] = useState(initialData.entries);
   const [totals, setTotals] = useState(initialData.totals);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Food[]>([]);
+  const [weight, setWeight] = useState<number | null>(null);
+  const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
+
+  // Load user settings (weight)
+  useEffect(() => {
+    getUserWeight().then(w => setWeight(w));
+  }, []);
 
   // AI States
   const [isAiLoading, setIsAiLoading] = useState(false);
@@ -43,7 +57,7 @@ export default function CalorieTracker({ initialData, today, formattedDate }: Ca
   }, [searchQuery]);
 
   const refreshLog = async () => {
-    const reloadRes = await fetch(`/api/log?date=${today}`);
+    const reloadRes = await fetch(`/api/log?date=${selectedDate}`);
     const newData = await reloadRes.json();
     setEntries(newData.entries);
     setTotals(newData.totals);
@@ -53,7 +67,7 @@ export default function CalorieTracker({ initialData, today, formattedDate }: Ca
     const res = await fetch("/api/log", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ foodId: food.id, servings: 1, date: today }),
+      body: JSON.stringify({ foodId: food.id, servings: 1, date: selectedDate }),
     });
     if (res.ok) {
       await refreshLog();
@@ -73,11 +87,21 @@ export default function CalorieTracker({ initialData, today, formattedDate }: Ca
 
   const clearLog = async () => {
     if (!window.confirm("Vuoi svuotare l'intero diario di oggi?")) return;
-    const res = await fetch(`/api/log?date=${today}`, {
+    const res = await fetch(`/api/log?date=${selectedDate}`, {
       method: "DELETE",
     });
     if (res.ok) {
       await refreshLog();
+    }
+  };
+
+  const handleSaveWeight = async (newWeight: number) => {
+    try {
+      await saveWeight(newWeight);
+      setWeight(newWeight);
+      setIsWeightModalOpen(false);
+    } catch (err) {
+      console.error("Errore nel salvataggio del peso:", err);
     }
   };
 
@@ -101,7 +125,7 @@ export default function CalorieTracker({ initialData, today, formattedDate }: Ca
         const logRes = await fetch("/api/log", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ foodId: id, servings: 1, date: today }),
+          body: JSON.stringify({ foodId: id, servings: 1, date: selectedDate }),
         });
 
         if (!logRes.ok) throw new Error(`Errore nel log di ${food.name}.`);
@@ -174,11 +198,44 @@ export default function CalorieTracker({ initialData, today, formattedDate }: Ca
     <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-4 text-slate-900">
       <div className="w-full max-w-2xl space-y-6">
 
-        {/* Header */}
-        <header className="text-center space-y-1">
-          <h1 className="text-3xl font-bold text-slate-900">Monitoraggio Calorie</h1>
-          <p className="text-slate-500 font-medium">{formattedDate}</p>
+        {/* Header with Date Selector */}
+        <header className="relative flex items-center justify-between bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+          <button
+            onClick={() => setSelectedDate(format(subDays(parseISO(selectedDate), 1), "yyyy-MM-dd"))}
+            className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+          >
+            <ChevronLeft className="w-5 h-5 text-slate-600" />
+          </button>
+
+          <div className="text-center">
+            <h1 className="text-xl font-black text-slate-900">
+              {isSameDay(parseISO(selectedDate), parseISO(initialToday))
+                ? "Oggi"
+                : format(parseISO(selectedDate), "EEEE d MMMM", { locale: it })}
+            </h1>
+            <p className="text-xs font-medium text-slate-500">
+              {format(parseISO(selectedDate), "d MMMM yyyy", { locale: it })}
+            </p>
+          </div>
+
+          <button
+            onClick={() => setSelectedDate(format(addDays(parseISO(selectedDate), 1), "yyyy-MM-dd"))}
+            className="p-2 hover:bg-slate-100 rounded-full transition-colors"
+          >
+            <ChevronRight className="w-5 h-5 text-slate-600" />
+          </button>
         </header>
+
+        {/* Weight Button (top-right of header row) */}
+        <div className="absolute top-4 right-4">
+          <button
+            onClick={() => setIsWeightModalOpen(true)}
+            className="p-2 rounded-full bg-white border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-all shadow-sm"
+            title="Imposta peso"
+          >
+            <Scale className="w-5 h-5" />
+          </button>
+        </div>
 
         {/* Progress Card */}
         <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-200">
@@ -389,6 +446,69 @@ export default function CalorieTracker({ initialData, today, formattedDate }: Ca
           </div>
         </div>
 
+        {/* Health Report Section */}
+        <section className="space-y-4 pb-12">
+          <DailyReportView date={selectedDate} weight={weight} today={initialToday} />
+        </section>
+
+        {/* Weight Modal */}
+        {isWeightModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <Scale className="w-5 h-5 text-blue-500" />
+                  Il tuo peso
+                </h3>
+                <button
+                  onClick={() => setIsWeightModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p className="text-sm text-slate-500">
+                Opzionale: usato solo per calcolare i g di proteine per kg. Se lasciato vuoto, non viene mostrato.
+              </p>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const val = parseFloat((e.target as HTMLFormElement).elements.namedItem("weight") as unknown as string);
+                  if (!Number.isFinite(val) || val <= 0) return;
+                  await handleSaveWeight(val);
+                }}
+                className="space-y-4"
+              >
+                <input
+                  name="weight"
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  defaultValue={weight ?? ""}
+                  placeholder="es. 70"
+                  className="w-full px-4 py-3 rounded-2xl bg-slate-50 border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all text-base font-bold outline-none"
+                />
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsWeightModalOpen(false)}
+                    className="flex-1 py-2.5 rounded-2xl border border-slate-200 text-slate-500 text-sm font-bold hover:bg-slate-50 transition-colors"
+                  >
+                    Annulla
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 rounded-2xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-colors"
+                  >
+                    Salva
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Weight Button (top-right of header row) */}
       </div>
     </div>
   );
@@ -449,5 +569,56 @@ function FoodLogEntryRow({ entry, onDelete }: { entry: LogEntry; onDelete: (id: 
         <X className="w-5 h-5" />
       </button>
     </div >
+  );
+}
+
+function DailyReportView({ date, weight, today }: { date: string; weight: number | null; today: string }) {
+  const [metrics, setMetrics] = useState<DailyHealthMetrics | null>(null);
+  const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/health/metrics?date=${date}`);
+        const data = await res.json();
+        if (res.ok) {
+          setMetrics(data.metrics);
+          setRecommendations(data.recommendations);
+        }
+      } catch (e) {
+        console.error("Error loading metrics:", e);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [date, weight]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12 gap-3 text-slate-400 font-medium animate-pulse">
+        <Loader2 className="w-5 h-5 animate-spin" />
+        Analisi salute in corso...
+      </div>
+    );
+  }
+
+  if (!metrics) {
+    return (
+      <div className="p-8 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-slate-400">
+        Nessun dato disponibile per questa data.
+      </div>
+    );
+  }
+
+  return (
+    <DailyReport
+      date={date}
+      today={today}
+      metrics={metrics}
+      recommendations={recommendations}
+    />
   );
 }
