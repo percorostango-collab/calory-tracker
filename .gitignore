@@ -28,9 +28,21 @@ Thumbs.db
 
 # Logs
 *.log
+dev.log
+
+# Screenshot e stati di verifica (mai nella release)
+.playwright-mcp/
+playwright-shots/
+
+# Backup e copie extra del database (i file .db sono già esclusi da *.db)
+sqlite.backup*
+sqlite_*.db
+*.db.*
 
 # Misc
 review_package/
 review_package.zip
+project_review_package.zip
+review_package_final/
 scripts/
-AAA
+AAAA/

@@ -101,7 +101,7 @@ export function generateRecommendations(metrics: DailyHealthMetrics): Recommenda
     recommendations.push({
       settore: "Sostanze Nocive",
       gravita: "warning",
-      motivo: `L'apporto di alimenti ultra-processati (NOVA 4) è superiore al target (${harmful.novaScore.toFixed(1)}% vs max ${NUTRITION_TARGETS.NOVA_MAX_PERCENT}%).`,
+      motivo: `L'apporto di alimenti processati e ultra-processati (NOVA 3-4) è rilevante: ${harmful.novaScore.toFixed(1)}% delle kcal del giorno.`,
       azione: "Limita i prodotti pronti e industriali.",
       alternative: ["Cucina partendo da ingredienti base", "Leggi le etichette"],
     });
@@ -140,17 +140,17 @@ export function generateRecommendations(metrics: DailyHealthMetrics): Recommenda
   if (metrics.sectors.lipids.triglyceridesIndicator === "alto") {
     recommendations.push({
       settore: "Lipidi",
-      gravita: "alta",
-      motivo: "Profilo dei trigliceridi a rischio (basato su zuccheri, alcol e grassi saturi).",
-      azione: "Riduzione immediata di zuccheri semplici, alcol e grassi saturi.",
-      alternative: ["Monitora l'andamento nei prossimi giorni"],
+      gravita: "warning",
+      motivo: "Indicatore alimentare dei trigliceridi elevato (basato su zuccheri, alcol e grassi saturi).",
+      azione: "Cerca di ridurre l'apporto di zuccheri semplici, alcol e grassi saturi.",
+      alternative: ["Privilegia grassi insaturi (omega-3)", "Sostituisci zuccheri con fibre"],
     });
   } else if (metrics.sectors.lipids.triglyceridesIndicator === "medio") {
     recommendations.push({
       settore: "Lipidi",
-      gravita: "warning",
-      motivo: "Profilo dei trigliceridi in allerta.",
-      azione: "Controlla l'apporto di zuccheri e grassi saturi.",
+      gravita: "info",
+      motivo: "Indicatore alimentare dei trigliceridi in allerta.",
+      azione: "Monitora l'apporto di zuccheri e grassi saturi.",
     });
   }
 

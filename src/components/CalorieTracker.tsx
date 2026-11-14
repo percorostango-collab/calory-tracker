@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { Search, Plus, X, Utensils, Flame, Droplet, Wheat, Sparkles, Camera, Loader2, Check, AlertCircle, Target, Trash2, ChevronLeft, ChevronRight, Scale, Info, TrendingUp, AlertTriangle, Award } from "lucide-react";
-import { Food, DailyLogData, NewFood, LogEntry } from "@/lib/types";
+import { X, Utensils, Flame, Droplet, Wheat, Sparkles, Camera, Loader2, Check, AlertCircle, Trash2, ChevronLeft, ChevronRight, Scale } from "lucide-react";
+import { DailyLogData, FoodEntry, AiItem } from "@/lib/types";
 import { format, addDays, subDays, parseISO, isSameDay } from "date-fns";
 import { it } from "date-fns/locale";
 import DailyReport from "./health/DailyReport";
@@ -12,7 +12,6 @@ import type { Recommendation } from "@/lib/health/recommendations";
 
 interface CalorieTrackerProps {
   initialData: DailyLogData;
-  initialFoods: Food[];
   today: string;
   formattedDate: string;
 }
@@ -21,10 +20,8 @@ const CALORIE_GOAL = 2500;
 
 export default function CalorieTracker({ initialData, today: initialToday, formattedDate: initialFormattedDate }: CalorieTrackerProps) {
   const [selectedDate, setSelectedDate] = useState(initialToday);
-  const [entries, setEntries] = useState(initialData.entries);
+  const [entries, setEntries] = useState<FoodEntry[]>(initialData.entries);
   const [totals, setTotals] = useState(initialData.totals);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<Food[]>([]);
   const [weight, setWeight] = useState<number | null>(null);
   const [isWeightModalOpen, setIsWeightModalOpen] = useState(false);
 
@@ -36,44 +33,25 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
   // AI States
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
-  const [aiPreviewItems, setAiPreviewItems] = useState<NewFood[] | null>(null);
+  const [aiPreviewItems, setAiPreviewItems] = useState<AiItem[] | null>(null);
+  // Incremented on every diary mutation so the health report re-fetches its
+  // metrics immediately (not only when the date changes).
+  const [reportRefresh, setReportRefresh] = useState(0);
+  // Context needed to commit the preview with a single POST /api/entries.
+  const [pendingQueryText, setPendingQueryText] = useState<string | null>(null);
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [pendingImageNote, setPendingImageNote] = useState<string | undefined>(undefined);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textInputRef = useRef<HTMLInputElement>(null);
-
-  // Debounced search
-  useEffect(() => {
-    const timer = setTimeout(async () => {
-      if (searchQuery.trim()) {
-        const res = await fetch(`/api/foods?q=${encodeURIComponent(searchQuery)}`);
-        const data = await res.json();
-        setSearchResults(data);
-      } else {
-        setSearchResults([]);
-      }
-    }, 300);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
 
   const refreshLog = async () => {
     const reloadRes = await fetch(`/api/log?date=${selectedDate}`);
     const newData = await reloadRes.json();
     setEntries(newData.entries);
     setTotals(newData.totals);
-  };
-
-  const addFood = async (food: Food) => {
-    const res = await fetch("/api/log", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ foodId: food.id, servings: 1, date: selectedDate }),
-    });
-    if (res.ok) {
-      await refreshLog();
-      setSearchQuery("");
-      setSearchResults([]);
-    }
+    // Diary changed -> health metrics must be recomputed on the server side.
+    setReportRefresh(n => n + 1);
   };
 
   const removeFood = async (id: number) => {
@@ -105,35 +83,33 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
     }
   };
 
-  // AI Workflow: Save then Log (all items at once)
-  const handleAiAddition = async (foods: NewFood[]) => {
+  // AI Workflow: commit the preview with ONE POST /api/entries.
+  const handleAiAddition = async () => {
     setIsAiLoading(true);
     setAiError(null);
     try {
-      for (const food of foods) {
-        // 1. Save the food first so we have an ID
-        const saveRes = await fetch("/api/foods/ai", {
+      let res: Response;
+      if (pendingImageFile) {
+        const formData = new FormData();
+        formData.append("image", pendingImageFile);
+        if (pendingImageNote) formData.append("note", pendingImageNote);
+        formData.append("date", selectedDate);
+        res = await fetch("/api/entries", { method: "POST", body: formData });
+      } else {
+        res = await fetch("/api/entries", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(food),
+          body: JSON.stringify({ queryText: pendingQueryText ?? "", date: selectedDate }),
         });
-
-        if (!saveRes.ok) throw new Error(`Errore nel salvataggio di ${food.name}.`);
-        const { id } = await saveRes.json();
-
-        // 2. Add to log
-        const logRes = await fetch("/api/log", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ foodId: id, servings: 1, date: selectedDate }),
-        });
-
-        if (!logRes.ok) throw new Error(`Errore nel log di ${food.name}.`);
       }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Inserimento fallito.");
 
-      // 3. Sync UI
       await refreshLog();
       setAiPreviewItems(null);
+      setPendingQueryText(null);
+      setPendingImageFile(null);
+      setPendingImageNote(undefined);
     } catch (err: any) {
       setAiError(err.message || "Si è verificato un errore durante l'elaborazione AI.");
     } finally {
@@ -141,7 +117,7 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
     }
   };
 
-  // AI Text Lookup
+  // AI Text Lookup (preview, non-committal)
   const handleTextLookup = async (description: string) => {
     if (!description.trim()) return;
     setIsAiLoading(true);
@@ -149,15 +125,17 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
     setAiPreviewItems(null);
 
     try {
-      const res = await fetch("/api/nutrition/text", {
+      const res = await fetch("/api/entries", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description }),
+        body: JSON.stringify({ queryText: description, preview: true }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Ricerca testuale fallita.");
 
       setAiPreviewItems(data);
+      setPendingQueryText(description);
+      setPendingImageFile(null);
     } catch (err: any) {
       setAiError(err.message || "Ricerca testuale fallita.");
     } finally {
@@ -165,7 +143,7 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
     }
   };
 
-  // AI Image Upload
+  // AI Image Upload (preview, non-committal)
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -176,9 +154,10 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
 
     const formData = new FormData();
     formData.append("image", file);
+    formData.append("preview", "1");
 
     try {
-      const res = await fetch("/api/nutrition/image", {
+      const res = await fetch("/api/entries", {
         method: "POST",
         body: formData,
       });
@@ -186,6 +165,9 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
       if (!res.ok) throw new Error(data.error || "Analisi immagine fallita.");
 
       setAiPreviewItems(data);
+      setPendingQueryText(null);
+      setPendingImageFile(file);
+      setPendingImageNote(undefined);
     } catch (err: any) {
       setAiError(err.message || "Caricamento immagine fallito.");
     } finally {
@@ -282,7 +264,7 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
                     <div className="flex flex-col">
                       <span className="font-bold text-slate-900">{item.name}</span>
                       <span className="text-xs text-slate-500">
-                        {item.protein}g P • {item.servingSize}
+                        {item.protein}g P • {item.servingSize || (item.serving_grams ? `${item.serving_grams} g st.` : "dato non disponibile")}
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
@@ -304,7 +286,7 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
                 ))}
               </div>
               <button
-                onClick={() => handleAiAddition(aiPreviewItems)}
+                onClick={() => handleAiAddition()}
                 disabled={isAiLoading || (aiPreviewItems?.length ?? 0) === 0}
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-all disabled:opacity-50 shadow-lg shadow-blue-100"
               >
@@ -385,28 +367,6 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
           )}
         </div>
 
-        {/* Search Section */}
-        <div className="space-y-4">
-          <div className="relative group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400 group-focus-within:text-blue-500 transition-colors" />
-            <input
-              type="text"
-              placeholder="Cerca tra i cibi..."
-              className="w-full pl-12 pr-4 py-4 rounded-3xl bg-white border border-slate-200 shadow-sm focus:ring-2 focus:ring-blue-500 transition-all outline-none text-base"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-
-          {searchResults.length > 0 && (
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-xl max-h-72 overflow-auto overflow-hidden">
-              {searchResults.map((food) => (
-                <FoodSearchItem key={food.id} food={food} onAdd={addFood} />
-              ))}
-            </div>
-          )}
-        </div>
-
         {/* Food Log Section */}
         <div className="space-y-4 pb-12">
           <div className="flex items-center justify-between">
@@ -448,7 +408,7 @@ export default function CalorieTracker({ initialData, today: initialToday, forma
 
         {/* Health Report Section */}
         <section className="space-y-4 pb-12">
-          <DailyReportView date={selectedDate} weight={weight} today={initialToday} />
+          <DailyReportView date={selectedDate} weight={weight} today={initialToday} refreshKey={reportRefresh} />
         </section>
 
         {/* Weight Modal */}
@@ -528,73 +488,60 @@ function SummaryCard({ label, value, icon, unit }: { label: string; value: strin
   );
 }
 
-function FoodSearchItem({ food, onAdd }: { food: Food; onAdd: (f: Food) => void }) {
-  return (
-    <div
-      className="flex items-center justify-between p-4 hover:bg-blue-50/50 cursor-pointer transition-colors group"
-      onClick={() => onAdd(food)}
-    >
-      <div className="flex flex-col">
-        <span className="font-bold text-slate-900">{food.name}</span>
-        <span className="text-xs text-slate-500">
-          {food.calories} kcal • {food.protein}g P • {food.servingSize}
-        </span >
-      </div >
-      <button
-        className="p-2 rounded-full bg-blue-600 text-white opacity-0 group-hover:opacity-100 transition-all transform group-hover:scale-110 shadow-lg shadow-blue-200"
-        onClick={(e) => {
-          e.stopPropagation();
-          onAdd(food);
-        }}
-      >
-        <Plus className="w-5 h-5" />
-      </button>
-    </div >
-  );
-}
-
-function FoodLogEntryRow({ entry, onDelete }: { entry: LogEntry; onDelete: (id: number) => void }) {
+function FoodLogEntryRow({ entry, onDelete }: { entry: FoodEntry; onDelete: (id: number) => void }) {
+  const portion = entry.requested_grams != null ? `${Math.round(entry.requested_grams)} g` : "porzione";
+  const kcal = entry.calculated_calories != null ? `${Math.round(entry.calculated_calories)} kcal` : "kcal: dato non disponibile";
   return (
     <div className="flex items-center justify-between p-5 hover:bg-slate-50 transition-colors">
       <div className="flex flex-col">
-        <span className="font-bold text-slate-900 text-base">{entry.food.name}</span>
+        <span className="font-bold text-slate-900 text-base">{entry.name ?? entry.query_text}</span>
         <span className="text-sm text-slate-500 font-medium">
-          {entry.servings}x {entry.food.servingSize} • {Math.round(entry.food.calories * entry.servings)} kcal
-        </span >
-      </div >
+          {portion} • {kcal}
+        </span>
+      </div>
       <button
         onClick={() => onDelete(entry.id)}
         className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"
       >
         <X className="w-5 h-5" />
       </button>
-    </div >
+    </div>
   );
 }
 
-function DailyReportView({ date, weight, today }: { date: string; weight: number | null; today: string }) {
+function DailyReportView({ date, weight, today, refreshKey }: { date: string; weight: number | null; today: string; refreshKey: number }) {
   const [metrics, setMetrics] = useState<DailyHealthMetrics | null>(null);
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function load() {
       setLoading(true);
+      setError(null);
       try {
         const res = await fetch(`/api/health/metrics?date=${date}`);
         const data = await res.json();
-        if (res.ok) {
+
+        if (!res.ok) {
+          throw new Error(data.error || `Errore HTTP ${res.status}`);
+        }
+
+        if (data && data.metrics) {
           setMetrics(data.metrics);
-          setRecommendations(data.recommendations);
+          setRecommendations(data.recommendations || []);
+        } else {
+          throw new Error("Risposta API incompleta: mancano i dati metrics.");
         }
       } catch (e) {
         console.error("Error loading metrics:", e);
+        setError(e instanceof Error ? e.message : "Errore sconosciuto nel caricamento dei dati.");
       } finally {
         setLoading(false);
       }
     }
     load();
-  }, [date, weight]);
+  }, [date, refreshKey]);
 
   if (loading) {
     return (
@@ -605,10 +552,12 @@ function DailyReportView({ date, weight, today }: { date: string; weight: number
     );
   }
 
-  if (!metrics) {
+  if (error || !metrics) {
     return (
-      <div className="p-8 text-center bg-slate-50 rounded-3xl border border-dashed border-slate-200 text-slate-400">
-        Nessun dato disponibile per questa data.
+      <div className="p-8 text-center bg-red-50 rounded-3xl border border-dashed border-red-200 text-red-600">
+        <AlertCircle className="w-8 h-8 mx-auto mb-3 opacity-50" />
+        <p className="font-bold">Dati del resoconto non disponibili</p>
+        <p className="text-sm opacity-80">{error || "Nessun dato trovato per questa data."}</p>
       </div>
     );
   }

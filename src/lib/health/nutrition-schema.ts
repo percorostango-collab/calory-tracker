@@ -27,8 +27,10 @@ export type FoodCategory = (typeof FOOD_CATEGORIES)[number];
 
 /**
  * JSON schema for a single food item returned by Gemini.
- * Core fields (name, calories, protein, carbs, fat, servingSize) are required;
- * the new health-related fields are optional and must be null when unknown.
+ * Core fields (name, calories, protein, carbs, fat) are required; the health
+ * fields and servingSize/serving_grams are nullable and must be null when
+ * unknown. Values are reported for the portion as described (the backend
+ * does any per-100 g normalization).
  */
 export const foodItemSchema: ObjectSchema = {
   description: "A single nutrition entry for a food item.",
@@ -40,7 +42,7 @@ export const foodItemSchema: ObjectSchema = {
     },
     calories: {
       type: SchemaType.NUMBER,
-      description: "Total calories in the serving.",
+      description: "Total calories in the portion as described.",
     },
     protein: {
       type: SchemaType.NUMBER,
@@ -138,8 +140,15 @@ export const foodItemSchema: ObjectSchema = {
     },
     servingSize: {
       type: SchemaType.STRING,
+      nullable: true,
       description:
-        "Human-readable serving size in Italian (e.g., '1 piatto', '200g').",
+        "Human-readable serving size in Italian (e.g., '1 piatto', '200g'). Use null if not determinable.",
+    },
+    serving_grams: {
+      type: SchemaType.NUMBER,
+      nullable: true,
+      description:
+        "Total estimated grams of this item in the portion described. Use null if not determinable.",
     },
     // Boolean flags for easy scoring
     carne_lavorata: {
@@ -168,7 +177,7 @@ export const foodItemSchema: ObjectSchema = {
       description: "True if it contains known food additives (highly processed).",
     },
   },
-  required: ["name", "calories", "protein", "carbs", "fat", "servingSize"],
+  required: ["name", "calories", "protein", "carbs", "fat"],
 };
 
 /**
@@ -193,7 +202,8 @@ export const NUTRITIONIST_PREAMBLE =
   "For each item also estimate the health fields when possible: " +
   "sugar, fiber, saturated_fat, monounsaturated_fat, polyunsaturated_fat, omega_3, omega_6, trans_fat, cholesterol, sodium, animal_protein, vegetal_protein, alcohol, " +
   "category (one of: " + FOOD_CATEGORIES.join(", ") + "), " +
-  "nova_group (1-4), cooking_method, and flags (carne_lavorata, carne_rossa, alcol, pesce_alto_mercurio, additivi). " +
+  "nova_group (1-4), cooking_method, servingSize and serving_grams, and flags (carne_lavorata, carne_rossa, alcol, pesce_alto_mercurio, additivi). " +
+  "Report all values for the portion as described; NEVER normalize to 100 g yourself. " +
   "If a field is not determinable, set it to null. " +
   "Ensure values are physically possible (e.g., saturated_fat <= fat, sugar <= carbs). " +
   "Return ONLY a JSON array of objects.";

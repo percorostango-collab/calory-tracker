@@ -8,28 +8,50 @@ function scoreFromCount(count: number): 0 | 1 | 2 | 3 {
   return 0;
 }
 
-function score03(value: 0 | 1 | 2 | 3 | null, motivo: string): Score03 {
-  return { value, motivo };
+function score03(value: 0 | 1 | 2 | 3 | null, motivo: string, copertura?: string): Score03 {
+  return copertura != null ? { value, motivo, copertura } : { value, motivo };
 }
 
 /**
+ * Sotto questa copertura dei dati, "nessun rischio rilevato" non è affidabile
+ * e l'indicatore resta "non valutabile" (null).
+ */
+const MIN_COVERAGE_FOR_LOW_SCORE = 0.7;
+
+/**
  * Calcola un punteggio 0-3 tracciando dati mancanti.
- * Se ci sono dati null e nessun valore positivo, il punteggio è null (non valutabile).
+ * - trueCount > 0: il punteggio riflette i rischi rilevati (i null non bloccano);
+ *   se ci sono null, il motivo segnala la copertura parziale.
+ * - trueCount === 0 e nullCount === 0: punteggio 0 con motivo standard.
+ * - trueCount === 0 e nullCount > 0:
+ *   - copertura (valutati/totale) >= soglia: punteggio 0 con copertura parziale;
+ *   - copertura < soglia: null (non valutabile).
  */
 function scoreWithNulls(
   trueCount: number,
   nullCount: number,
+  evaluatedCount: number,
   zeroMotivo: string,
   positiveMotivo: (count: number) => string,
 ): Score03 {
-  if (nullCount > 0 && trueCount === 0) {
-    return score03(null, "dato non disponibile per alcune voci");
+  const total = evaluatedCount + nullCount;
+  const copertura = `${evaluatedCount}/${total}`;
+
+  if (trueCount > 0) {
+    return score03(scoreFromCount(trueCount), positiveMotivo(trueCount), copertura);
   }
-  const value = scoreFromCount(trueCount);
-  return score03(
-    value,
-    trueCount === 0 ? zeroMotivo : positiveMotivo(trueCount),
-  );
+
+  if (nullCount === 0) {
+    return score03(0, zeroMotivo, copertura);
+  }
+
+  const coverage = total > 0 ? evaluatedCount / total : 0;
+
+  if (coverage >= MIN_COVERAGE_FOR_LOW_SCORE) {
+    return score03(0, zeroMotivo, copertura);
+  }
+
+  return score03(null, "copertura dati insufficiente per questo indicatore", copertura);
 }
 
 /**
@@ -160,6 +182,7 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
         sugars: {
           totalGrams: null, simpleGrams: null, complexGrams: null,
           glycemicClass: null, kcalPercentage: null, isHigh: null,
+          entriesTotal: 0, entriesWithData: 0,
         },
         lipids: {
           totalGrams: null, saturatedGrams: null, monounsaturatedGrams: null,
@@ -167,10 +190,12 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
           transGrams: null, cholesterolMg: null,
           triglyceridesIndicator: null, triglyceridesFactors: [],
           kcalPercentage: null, isHigh: null,
+          entriesTotal: 0, entriesWithData: 0,
         },
         proteins: {
           totalGrams: null, animalGrams: null, vegetalGrams: null,
           gramsPerKg: null, kcalPercentage: null, mix: null, isLow: null,
+          entriesTotal: 0, entriesWithData: 0,
         },
         harmful_substances: {
           processedMeat: score03(null, emptyMotivo),
@@ -182,13 +207,21 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
           mercury: score03(null, emptyMotivo),
           additivi: score03(null, emptyMotivo),
           novaScore: null,
+          nova4KcalPercent: null,
+          novaCounts: { g1: 0, g2: 0, g3: 0, g4: 0, unknown: 0 },
+          novaFoods: [],
+          cookingSources: { declared: 0, ai: 0, unknown: 0 },
           isHigh: null,
+          entriesTotal: 0, entriesWithData: 0,
         },
       },
       fiber: { totalGrams: null, isLow: null },
       dailyLoad: null,
       dailyLoadFoods: [],
       coverage: null,
+      entriesComplete: 0,
+      source: "none",
+      provider: null,
     };
   }
 
@@ -215,7 +248,10 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
   const vegetalProteinList: (number | null)[] = [];
 
   let novaKcal = 0;
+  let novaKcal4 = 0;
   let novaEntriesWithCategory = 0;
+  let novaCount1 = 0, novaCount2 = 0, novaCount3 = 0, novaCount4 = 0, novaCountUnknown = 0;
+  const novaFoods: { name: string; group: number; kcal: number }[] = [];
 
   // Sector 4 counts with null tracking
   let processedMeatTrue = 0;
@@ -234,6 +270,9 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
   let additiviNull = 0;
 
   let entriesWithFullData = 0;
+  let sector4WithData = 0;
+
+  const cookingSources = { declared: 0, ai: 0, unknown: 0 };
 
   for (const entry of entries) {
     const { food, servings, cooking_method } = entry;
@@ -261,19 +300,32 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
     animalProteinList.push(food.animal_protein == null ? null : food.animal_protein * s);
     vegetalProteinList.push(food.vegetal_protein == null ? null : food.vegetal_protein * s);
 
-    // NOVA 3-4 share of kcal (Sector 4)
-    if (food.nova_group != null) {
+    // NOVA: single accumulation — counts, kcal share (3-4 e 4-only) e lista
+    // alimenti NOVA>=3 (fonte unica per dettaglio, riepilogo e consigli).
+    if (food.nova_group == null) {
+      novaCountUnknown++;
+    } else {
       novaEntriesWithCategory++;
+      if (food.nova_group === 1) novaCount1++;
+      else if (food.nova_group === 2) novaCount2++;
+      else if (food.nova_group === 3) novaCount3++;
+      else {
+        novaCount4++;
+        novaKcal4 += entryKcal;
+      }
       if (food.nova_group >= 3) {
         novaKcal += entryKcal;
+        novaFoods.push({ name: food.name, group: food.nova_group, kcal: entryKcal });
       }
     }
 
     // High-temperature cooking (Sector 4)
     if (cooking_method == null) {
       highTempCookingNull++;
-    } else if (isHighTempCooking(cooking_method)) {
-      highTempCookingTrue++;
+      cookingSources.unknown++;
+    } else {
+      cookingSources[entry.cooking_source === "declared" ? "declared" : "ai"]++;
+      if (isHighTempCooking(cooking_method)) highTempCookingTrue++;
     }
 
     // Flags for harmful substances scores (Sector 4)
@@ -307,6 +359,23 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
       food.vegetal_protein != null
     ) {
       entriesWithFullData++;
+    }
+
+    // Sector 4: entry has sufficient data if the 7 food-level indicators are
+    // known. cooking_method is intentionally NOT required: it lives on food_log
+    // (often missing for legacy entries) and the highTempCooking score already
+    // reports "non valutabile" when it is absent, so coverage should not be
+    // unfairly penalized by its absence.
+    if (
+      food.carne_lavorata != null &&
+      food.carne_rossa != null &&
+      food.nova_group != null &&
+      food.alcol != null &&
+      food.pesce_alto_mercurio != null &&
+      food.additivi != null &&
+      food.sodium != null
+    ) {
+      sector4WithData++;
     }
   }
 
@@ -342,6 +411,8 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
     totalCalories > 0 && totalProtein != null ? (proteinKcal / totalCalories) * 100 : null;
   const novaKcalPercent =
     novaEntriesWithCategory > 0 && totalCalories > 0 ? (novaKcal / totalCalories) * 100 : null;
+  const nova4KcalPercent =
+    novaEntriesWithCategory > 0 && totalCalories > 0 ? (novaKcal4 / totalCalories) * 100 : null;
 
   // Simple / complex carbs split
   let simpleGrams: number | null = null;
@@ -373,45 +444,65 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
   // ---------- sector-4 scores (0-3) with motivi ----------
   const processedMeat = scoreWithNulls(
     processedMeatTrue, processedMeatNull,
+    entries.length - processedMeatNull,
     "nessuna carne lavorata rilevata",
     (c) => `${c} voce${c > 1 ? "ci" : ""} di carne lavorata`,
   );
   const redMeat = scoreWithNulls(
     redMeatTrue, redMeatNull,
+    entries.length - redMeatNull,
     "nessuna carne rossa rilevata",
     (c) => `${c} voce${c > 1 ? "ci" : ""} di carne rossa`,
   );
+  // Cotture: il dato mancante NON è assenza di rischio — il motivo distingue
+  // esplicitamente "metodo sconosciuto" da "metodo noto non intenso". In questa
+  // versione il metodo di cottura non si dichiara a mano: è sempre stimato dall'AI.
+  const cookingSourceNote =
+    cookingSources.declared === 0 ? "metodi stimati dall'AI" : "metodi in parte stimati dall'AI";
   const highTempCooking = scoreWithNulls(
     highTempCookingTrue, highTempCookingNull,
-    "nessuna cottura ad alta temperatura rilevata",
-    (c) => `${c} cottura${c > 1 ? "e ad alta temperatura" : " ad alta temperatura"}`,
+    entries.length - highTempCookingNull,
+    highTempCookingNull > 0
+      ? `nessuna cottura intensa tra le ${entries.length - highTempCookingNull} voci con metodo noto (${highTempCookingNull} senza dato) · ${cookingSourceNote}`
+      : `nessuna cottura intensa · ${cookingSourceNote}`,
+    (c) => `${c} cottura${c > 1 ? "i" : ""} intensa${c > 1 ? "e" : ""} ad alta temperatura · ${cookingSourceNote}`,
   );
   const ultraProcessed = scoreWithNulls(
     ultraProcessedTrue, ultraProcessedNull,
+    entries.length - ultraProcessedNull,
     "nessun ultra-processato (NOVA 4) rilevato",
     (c) => `${c} alimento${c > 1 ? "i ultra-processati (NOVA 4)" : " ultra-processato (NOVA 4)"}`,
   );
   const alcohol = scoreWithNulls(
     alcoholTrue, alcoholNull,
+    entries.length - alcoholNull,
     "nessun alcol rilevato",
     (c) => `${c} voce${c > 1 ? "ci" : ""} con alcol`,
   );
   const sodiumValue = sodiumScore(totalSodium);
+  const sodiumWithData = sodiumList.filter((v) => v != null).length;
   const sodium = score03(
     sodiumValue,
     totalSodium == null
       ? "sodio non disponibile"
       : totalSodium < 2000
-        ? `sodio ${totalSodium} mg (entro soglia)`
-        : `sodio ${totalSodium} mg (sopra soglia)`,
+        ? `sodio ${Math.round(totalSodium)} mg (entro soglia)`
+        : `sodio ${Math.round(totalSodium)} mg (sopra soglia)`,
+    `${sodiumWithData}/${entries.length}`,
   );
+  // Mercurio: l'assenza vale solo sulle voci con dato; le restanti vanno
+  // dichiarate "senza dato" (come per le cotture), non come assenza di rischio.
   const mercury = scoreWithNulls(
     mercuryTrue, mercuryNull,
-    "nessun pesce alto mercurio rilevato",
+    entries.length - mercuryNull,
+    mercuryNull > 0
+      ? `nessun pesce alto mercurio tra le ${entries.length - mercuryNull} voci valutate (${mercuryNull} senza dato)`
+      : "nessun pesce alto mercurio rilevato",
     (c) => `${c} voce${c > 1 ? "ci" : ""} di pesce alto mercurio`,
   );
   const additivi = scoreWithNulls(
     additiviTrue, additiviNull,
+    entries.length - additiviNull,
     "nessun additivo rilevato",
     (c) => `${c} voce${c > 1 ? "ci" : ""} con additivi`,
   );
@@ -461,6 +552,8 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
           sugarKcalPercent != null
             ? sugarKcalPercent > NUTRITION_TARGETS.SUGARS_MAX_PERCENT
             : null,
+        entriesTotal: entries.length,
+        entriesWithData: sugarsList.filter((v) => v != null).length,
       },
       lipids: {
         totalGrams: totalFat,
@@ -476,6 +569,8 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
         kcalPercentage: fatKcalPercent,
         isHigh:
           fatKcalPercent != null ? fatKcalPercent > NUTRITION_TARGETS.FAT_MAX_PERCENT : null,
+        entriesTotal: entries.length,
+        entriesWithData: fatList.filter((v) => v != null).length,
       },
       proteins: {
         totalGrams: totalProtein,
@@ -491,6 +586,8 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
           proteinKcalPercent != null
             ? proteinKcalPercent < NUTRITION_TARGETS.PROTEIN_MIN_PERCENT
             : null,
+        entriesTotal: entries.length,
+        entriesWithData: proteinList.filter((v) => v != null).length,
       },
       harmful_substances: {
         processedMeat,
@@ -502,8 +599,14 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
         mercury,
         additivi,
         novaScore: novaKcalPercent,
+        nova4KcalPercent,
+        novaCounts: { g1: novaCount1, g2: novaCount2, g3: novaCount3, g4: novaCount4, unknown: novaCountUnknown },
+        novaFoods,
+        cookingSources,
         isHigh:
           maxSector4Score != null ? maxSector4Score >= 2 : null,
+        entriesTotal: entries.length,
+        entriesWithData: sector4WithData,
       },
     },
     fiber: {
@@ -516,5 +619,12 @@ export function aggregateDay(entries: HealthEntry[], weightKg?: number | null): 
     dailyLoad,
     dailyLoadFoods,
     coverage,
+    entriesComplete: entriesWithFullData,
+    source: entries.every((e) => e.source === "ai")
+      ? "ai"
+      : entries.every((e) => e.source === "user")
+        ? "user"
+        : "mixed",
+    provider: entries[0].provider ?? null,
   };
 }

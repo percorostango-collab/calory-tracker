@@ -20,9 +20,11 @@ goto start
 echo [OK] Dipendenze gia installate.
 
 :start
+echo [i] Il browser si aprira da solo su http://localhost:3010 quando il server e' pronto.
 echo [i] Premi CTRL+C per fermare il server.
 echo.
-call npm run dev
+start "" /min powershell -NoProfile -WindowStyle Hidden -Command "for($i=0;$i -lt 120;$i++){ if(Get-NetTCPConnection -State Listen -LocalPort 3010 -ErrorAction SilentlyContinue){ Start-Process 'http://localhost:3010'; break }; Start-Sleep -Seconds 1 }"
+call npm run dev -- -p 3010
 if errorlevel 1 goto fail
 goto end
 

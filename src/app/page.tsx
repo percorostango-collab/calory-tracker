@@ -1,11 +1,11 @@
-import { initDb, db } from "@/db";
-import { getDailyLog, getFoods } from "@/lib/server-actions";
+import { initDb } from "@/db";
+import { getDailyLog } from "@/lib/server-actions";
 import CalorieTracker from "@/components/CalorieTracker";
 
 export const dynamic = "force-dynamic";
 
 export default async function Page() {
-  // Auto-init: create tables and seed foods on first run (idempotent)
+  // Auto-init: create the new tables if missing (idempotent, no seed, no drop).
   await initDb();
 
   const today = new Intl.DateTimeFormat("en-CA").format(new Date());
@@ -16,13 +16,11 @@ export default async function Page() {
     day: "numeric"
   });
   const initialData = await getDailyLog(today);
-  const initialFoods = await getFoods("");
 
   return (
     <main className="min-h-screen bg-background">
       <CalorieTracker
         initialData={initialData}
-        initialFoods={initialFoods}
         today={today}
         formattedDate={formattedDate}
       />

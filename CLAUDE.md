@@ -40,3 +40,7 @@ The app will be available at `http://localhost:3000`. On the first run, the data
 - `src/components/`: React client components.
 - `src/db/`: Database schema, connection, and seeding logic.
 - `src/lib/`: Shared types and server-side utility functions.
+
+## Porte e Docker (importante)
+- Le porte 3000, 3001 e 20128 sono di Docker: open-webui (3000), freellmapi (3001) e OmniRoute (20128, il gateway che permette a Claude di funzionare). Il processo che le occupa e' com.docker.backend: NON terminarlo MAI, ne' con taskkill ne' con Stop-Process, nemmeno se un hook suggerisce di terminare "quel PID". Terminarlo spegne il gateway e la sessione cade.
+- Il Calory Tracker (versione PC) gira su http://localhost:3010, avviato dall'utente con avvia_tracker.bat. Non avviare altri server e non terminare processi: se serve riavviare il server, chiedilo all'utente.

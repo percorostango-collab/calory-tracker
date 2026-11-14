@@ -1,15 +1,26 @@
-import type { Food, NewFood } from "../types";
+import type { Nutrition } from "../types";
 
 /**
  * Represents an entry in a daily log, enriched with nutritional and categorization data
  * for use in the health analytics engine.
+ *
+ * `servings` is the portion factor of the diary entry (requested_grams /
+ * base_grams, or 1 for per-portion entries); `food` carries the per-100 g
+ * (or per-portion) values, so `food.x * servings` reproduces the entry's
+ * immutable snapshot.
  */
 export interface HealthEntry {
   id: number;
   servings: number;
   loggedAt: string; // YYYY-MM-DD
-  food: Food;
+  food: Nutrition;
   cooking_method?: string | null;
+  /** Cooking-method origin: "declared" (user) | "ai" (AI estimate) | "unknown". */
+  cooking_source: "declared" | "ai" | "unknown";
+  /** Data source for this entry's profile ("ai" = estimate, "user" = declared). */
+  source: string;
+  /** AI provider, when source === "ai" (e.g. "gemini"). */
+  provider: string | null;
 }
 
 /**
@@ -19,6 +30,9 @@ export interface HealthEntry {
 export interface Score03 {
   value: 0 | 1 | 2 | 3 | null;
   motivo: string;
+  /** Coverage per indicatore "valutati/totale" (es. "4/5"): distingue la
+   *  copertura generale da quella di questo singolo indicatore. */
+  copertura?: string;
 }
 
 /**
@@ -49,6 +63,10 @@ export interface DailyHealthMetrics {
       kcalPercentage: number | null;
       /** High if sugars kcal share exceeds target. Null when sugars are unknown. */
       isHigh: boolean | null;
+      /** Total entries for this sector. */
+      entriesTotal: number;
+      /** Entries with sufficient data for this sector. */
+      entriesWithData: number;
     };
     lipids: {
       /** Total fat in grams (null if not estimable). */
@@ -67,6 +85,10 @@ export interface DailyHealthMetrics {
       kcalPercentage: number | null;
       /** High if fat kcal share exceeds target. Null when fat is unknown. */
       isHigh: boolean | null;
+      /** Total entries for this sector. */
+      entriesTotal: number;
+      /** Entries with sufficient data for this sector. */
+      entriesWithData: number;
     };
     proteins: {
       /** Total protein in grams (null if not estimable). */
@@ -76,10 +98,15 @@ export interface DailyHealthMetrics {
       /** Grams per kg of body weight (null if user weight unknown). */
       gramsPerKg: number | null;
       kcalPercentage: number | null;
-      /** "mixed" also when the source is unknown (undecidable). */
-      mix: "animal" | "vegetal" | "mixed" | null;
+      /** "mixed" when sources are balanced; "unknown" when animal+vegetal data
+       * covers less than 90% of the total protein. */
+      mix: "animal" | "vegetal" | "mixed" | "unknown" | null;
       /** Low if protein kcal share below target. Null when protein is unknown. */
       isLow: boolean | null;
+      /** Total entries for this sector. */
+      entriesTotal: number;
+      /** Entries with sufficient data for this sector. */
+      entriesWithData: number;
     };
     harmful_substances: {
       /** Score 0-3: processed meat (carne_lavorata flag). */
@@ -98,10 +125,23 @@ export interface DailyHealthMetrics {
       mercury: Score03;
       /** Score 0-3: food additives. */
       additivi: Score03;
-      /** NOVA 3-4 share of total daily kcal (null if categories unknown). */
+      /** NOVA 3-4 (processati + ultra-processati) share of daily kcal (null if categories unknown). */
       novaScore: number | null;
+      /** NOVA 4 (ultra-processati only) share of daily kcal (null if categories unknown). */
+      nova4KcalPercent: number | null;
+      /** NOVA group counts among entries (0 = none). */
+      novaCounts: { g1: number; g2: number; g3: number; g4: number; unknown: number };
+      /** Entries with NOVA >= 3, with their kcal contribution: single source for
+       *  detail rows, summary boxes and recommendations. */
+      novaFoods: { name: string; group: number; kcal: number }[];
+      /** Cooking-method origins across entries: declared by user / AI-estimated / unknown. */
+      cookingSources: { declared: number; ai: number; unknown: number };
       /** High if any sector-4 score signals risk. Null when nothing is evaluable. */
       isHigh: boolean | null;
+      /** Total entries for this sector. */
+      entriesTotal: number;
+      /** Entries with sufficient data for this sector. */
+      entriesWithData: number;
     };
   };
   fiber: {
@@ -113,6 +153,13 @@ export interface DailyHealthMetrics {
   dailyLoad: "low" | "medium" | "high" | null;
   /** Food names contributing to the daily load (critical sectors). */
   dailyLoadFoods: string[];
-  /** 0 to 1: fraction of entries with complete (non-null) health data. Null if no entries. */
+  /** 0 to 1: GENERAL coverage — fraction of entries complete across the core fields.
+   *  Per-indicator coverage is reported on each Score03.motivo (e.g. "4/5"). */
   coverage: number | null;
+  /** Entries complete across the core fields (numerator of `coverage`). */
+  entriesComplete: number;
+  /** Aggregate data origin for the day's entries ("none" for an empty day). */
+  source: "ai" | "user" | "mixed" | "none";
+  /** AI provider, when the origin includes AI estimates. */
+  provider: string | null;
 }

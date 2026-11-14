@@ -12,6 +12,7 @@
     "@google/generative-ai": "^0.24.1",
     "@libsql/client": "^0.18.0",
     "clsx": "^2.1.1",
+    "date-fns": "^4.4.0",
     "drizzle-orm": "^0.30.0",
     "lucide-react": "^0.454.0",
     "next": "15.5.29",

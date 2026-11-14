@@ -1,9 +1,9 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { GenerativeModel } from "@google/generative-ai";
-import type { NewFood } from "./types";
+import type { AiItem } from "./types";
 import { nutritionSchema, NUTRITIONIST_PREAMBLE } from "./health/nutrition-schema";
 
-const MODEL_NAME = "gemini-3.5-flash-lite";
+const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
 
 /**
  * Error with an HTTP status code, so API routes can map failures directly.
@@ -43,12 +43,14 @@ function getModel() {
 }
 
 /**
- * Validates the raw model output and normalizes it into NewFood[].
- * Core fields (name, calories, protein, carbs, fat, servingSize) are mandatory:
- * missing/invalid core -> 502. New health fields are optional: missing/invalid
- * or physically impossible -> null (never 502, never invented).
+ * Validates the raw model output and normalizes it into AiItem[].
+ * Core fields (name, calories, protein, carbs, fat) are mandatory in the
+ * response: missing/invalid core -> 502. servingSize and serving_grams are
+ * nullable (serving_grams drives the per-100 g normalization downstream).
+ * New health fields are optional: missing/invalid or physically impossible ->
+ * null (never 502, never invented).
  */
-export function parseFoodResponse(raw: unknown): NewFood[] {
+export function parseFoodResponse(raw: unknown): AiItem[] {
   if (!Array.isArray(raw)) {
     throw new GeminiError("AI returned an invalid response format. Expected an array.", 502);
   }
@@ -67,12 +69,19 @@ export function parseFoodResponse(raw: unknown): NewFood[] {
       !isFiniteNumber(calories) ||
       !isFiniteNumber(protein) ||
       !isFiniteNumber(carbs) ||
-      !isFiniteNumber(fat) ||
-      typeof servingSize !== "string" ||
-      !servingSize.trim()
+      !isFiniteNumber(fat)
     ) {
       throw new GeminiError("AI returned incomplete or invalid nutrition data in one of the items.", 502);
     }
+
+    // Numeric estimate of the described portion in grams; null if not
+    // determinable (no sanity check beyond finiteness/positivity).
+    const servingGrams =
+      typeof item.serving_grams === "number" &&
+      Number.isFinite(item.serving_grams) &&
+      item.serving_grams > 0
+        ? item.serving_grams
+        : null;
 
     // New health fields: nullable, never invented (missing/invalid -> null, no 502)
     const sugar = isFiniteNumber(item.sugar) ? round1(item.sugar) : null;
@@ -119,7 +128,8 @@ export function parseFoodResponse(raw: unknown): NewFood[] {
       protein: round1(protein),
       carbs: round1(carbs),
       fat: round1(fat),
-      servingSize: servingSize.trim(),
+      servingSize: typeof servingSize === "string" && servingSize.trim() ? servingSize.trim() : null,
+      serving_grams: servingGrams,
       sugar: finalSugar,
       fiber,
       saturated_fat: finalSaturatedFat,
@@ -217,7 +227,7 @@ async function withRetry<T>(
 /**
  * Estimates nutrition from a text description.
  */
-export async function lookupNutritionFromText(description: string): Promise<NewFood[]> {
+export async function lookupNutritionFromText(description: string): Promise<AiItem[]> {
   if (!description.trim()) {
     throw new GeminiError("Description cannot be empty.", 400);
   }
@@ -243,7 +253,7 @@ export async function lookupNutritionFromImage(
   imageBuffer: Buffer,
   mimeType: string,
   note?: string
-): Promise<NewFood[]> {
+): Promise<AiItem[]> {
   if (!imageBuffer || imageBuffer.length === 0) {
     throw new GeminiError("No image data provided.", 400);
   }
